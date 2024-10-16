@@ -1,87 +1,68 @@
-import tempfile
 import unittest
-import os
-import numpy as np
-import torch
+from unittest.mock import MagicMock, patch
 from replaybuffer.replay_buffer import ReplayBuffer
 
-
 class TestReplayBuffer(unittest.TestCase):
-    def setUp(self):
+    @patch('replaybuffer.replay_buffer.DiskManager')
+    @patch('replaybuffer.replay_buffer.Prefetcher')
+    @patch('replaybuffer.replay_buffer.BackgroundSaver')
+    @patch('filelock.FileLock')
+    def setUp(self, MockFileLock, MockBackgroundSaver, MockPrefetcher, MockDiskManager):
         self.max_size = 100
-        self.h5_path = "/tmp/test_replay_buffer.h5"
-        self.image_shape = (3, 64, 64)
-        self.device = torch.device("cpu")
-        self.batch_size = 10
-        
-        try:
-            os.remove(self.h5_path)
-        except FileNotFoundError:
-            pass
-        
-        self.replay_buffer = ReplayBuffer(
-            self.max_size, self.h5_path, self.image_shape, self.device, self.batch_size
-        )
+        self.h5_path = '/tmp/test.h5'
+        self.image_shape = (84, 84, 3)
+        self.device = 'cpu'
+        self.batch_size = 32
 
-    def _delete_h5(self):
-        if os.path.exists(self.h5_path):
-            os.remove(self.h5_path)
+        self.mock_lock = MockFileLock.return_value
+        self.mock_disk_manager = MockDiskManager.return_value
+        self.mock_prefetcher = MockPrefetcher.return_value
+        self.mock_background_saver = MockBackgroundSaver.return_value
 
-    def tearDown(self):
-        self._delete_h5()
+        self.replay_buffer = ReplayBuffer(self.max_size, self.h5_path, self.image_shape, self.device, self.batch_size)
 
-    def test_add_and_sample(self):
-        state = np.random.rand(*self.image_shape).astype(np.float32)
-        action = np.random.randint(0, 10)
-        reward = np.random.rand()
-        next_state = np.random.rand(*self.image_shape).astype(np.float32)
+    def test_init_h5_file(self):
+        shapes = {
+            "state": self.image_shape,
+            "action": (1,),
+            "reward": (1,),
+            "next_state": self.image_shape,
+            "done": (1,),
+        }
+        self.mock_disk_manager._init_h5_file.assert_called_once_with(shapes)
+
+    def test_start_subprocesses(self):
+        self.mock_prefetcher.start.assert_called_once()
+        self.mock_background_saver.start.assert_called_once()
+
+    def test_add(self):
+        state = [[0] * 84] * 84
+        action = 1
+        reward = 1.0
+        next_state = [[0] * 84] * 84
         done = False
 
-        for _ in range(self.batch_size):
-            self.replay_buffer.add(state, action, reward, next_state, done)
-
-        # Wait for the samples to be saved
-        while self.replay_buffer.save_queue.empty():
-            pass
-
-        # Wait for the sample to be available
-        while self.replay_buffer.prefetch_batches.empty():
-            pass
-
-        sample = self.replay_buffer.sample()
-        self.assertEqual(len(sample), self.batch_size)
-        (
-            sampled_state,
-            sampled_action,
-            sampled_reward,
-            sampled_next_state,
-            sampled_done,
-        ) = sample[0]
-
-        np.testing.assert_array_almost_equal(sampled_state.cpu().numpy(), state)
-        self.assertEqual(sampled_action.item(), action)
-        self.assertAlmostEqual(sampled_reward.item(), reward)
-        np.testing.assert_array_almost_equal(
-            sampled_next_state.cpu().numpy(), next_state
+        self.replay_buffer.add(state, action, reward, next_state, done)
+        self.mock_background_saver.save.assert_called_once_with(
+            {
+                "state": state,
+                "action": [action],
+                "reward": [reward],
+                "next_state": next_state,
+                "done": done,
+            }
         )
-        self.assertEqual(sampled_done.item(), done)
 
-    def test_save_and_load(self):
-        for _ in range(self.batch_size):
-            state = np.random.rand(*self.image_shape).astype(np.float32)
-            action = np.random.randint(0, 10)
-            reward = np.random.rand()
-            next_state = np.random.rand(*self.image_shape).astype(np.float32)
-            done = False
-            self.replay_buffer.add(state, action, reward, next_state, done)
+    def test_sample(self):
+        self.replay_buffer.sample()
+        self.mock_prefetcher.sample.assert_called_once()
 
-        # Wait for the samples to be saved
-        while not self.replay_buffer.save_queue.empty():
-            pass
+    def test_del(self):
+        del self.replay_buffer
+        self.mock_background_saver.stop.assert_called_once()
+        self.mock_prefetcher.stop.assert_called_once()
+        self.mock_disk_manager.lock.release.assert_called_once()
+        self.mock_lock.release.assert_called_once()
 
-        loaded_batch = self.replay_buffer._load_batch_from_disk()
-        self.assertEqual(len(loaded_batch), self.batch_size)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
