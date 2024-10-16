@@ -37,9 +37,10 @@ class TestReplayBufferE2E(unittest.TestCase):
         print(f"Time to sample 600 batches: {time.time() - start}")
 
 if __name__ == "__main__":
-    # logging.basicConfig(
-    #     stream=sys.stdout,
-    #     level=logging.DEBUG,
-    #     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    # )
+    logging.basicConfig(
+        stream=sys.stdout,
+        # level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    # logging.getLogger("Prefetcher").setLevel(logging.DEBUG)
     unittest.main()
