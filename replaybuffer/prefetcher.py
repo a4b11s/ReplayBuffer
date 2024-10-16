@@ -10,7 +10,6 @@ from replaybuffer.experience import Experience
 class Prefetcher:
     def __init__(self, disk_manager, device, batch_size):
         self.disk_manager: DiskManager = disk_manager
-        self.disk_manager.length = 0
 
         self.device = device
         self.batch_size = batch_size
