@@ -10,90 +10,90 @@ import logging
 
 class ReplayBuffer:
     def __init__(self, max_size, h5_path, image_shape, device, batch_size, prefetch=50):
-        logging.debug("Initializing ReplayBuffer")
+        self.logger = logging.getLogger("ReplayBuffer")
+        self.logger.debug("Initializing ReplayBuffer")
+
+        # Child loggers for various functionalities
+        self.thread_logger = self.logger.getChild("Thread")
+        self.add_logger = self.logger.getChild("Add")
+        self.sample_logger = self.logger.getChild("Sample")
+        self.save_logger = self.logger.getChild("Save")
+        self.load_logger = self.logger.getChild("Load")
+
         self.max_size = max_size
         self.h5_path = h5_path
         self.batch_size = batch_size
         self.image_shape = image_shape
 
         self.prefetch_batches = queue.Queue(maxsize=prefetch)
-        self.save_queue = queue.Queue(maxsize=prefetch)
+        self.save_queue = queue.Queue()
         self.device = device
 
         self.length = 0
-
-        logging.info(
-            "ReplayBuffer initialized with max_size=%d, h5_path=%s, image_shape=%s, device=%s, batch_size=%d, prefetch=%d",
-            max_size,
-            h5_path,
-            image_shape,
-            device,
-            batch_size,
-            prefetch,
-        )
-
         self.disk_pointer = 0
 
         self.lock = filelock.FileLock(h5_path + ".lock")
-        self.prefetch_thread = threading.Thread(target=self._prefetch)
-        self.save_thread = threading.Thread(target=self._prefetch_save)
+        self.thread = threading.Thread(target=self._process)
 
         self._init_h5_file()
-        self._run_threads()
+        self.thread.start()  # Start the processing thread
 
     def add(self, state, action, reward, next_state, done):
-        logging.debug("Adding experience to ReplayBuffer")
+        self.add_logger.debug("Adding experience to ReplayBuffer")
+
         state = self._add_prepare(state)
         action = self._add_prepare(action)
         reward = self._add_prepare(reward)
         next_state = self._add_prepare(next_state)
         done = self._add_prepare(done)
 
+        self.add_logger.debug("Experience prepared for addition to ReplayBuffer")
+
         experience = np.array([[state, action, reward, next_state, done]], dtype=object)
         self._save_batch_to_disk(experience)
 
     def sample(self):
-        logging.debug("Sampling from ReplayBuffer")
-        print(self.prefetch_batches.qsize())
+        self.sample_logger.debug("Sampling from ReplayBuffer")
         return self.prefetch_batches.get()
 
     def __len__(self):
-        logging.debug("Getting length of ReplayBuffer")
+        self.logger.debug("Getting length of ReplayBuffer")
         return self.length
 
     def _add_prepare(self, data):
-        logging.debug("Preparing data for addition to ReplayBuffer")
+        self.logger.debug("Preparing data for addition to ReplayBuffer")
         if isinstance(data, torch.Tensor):
             return data.cpu().numpy()
         return data
 
-    def __getitem__(self, idx):
-        logging.debug("Getting item from ReplayBuffer at index %d", idx)
-        return self.h5_file["experiences"][idx]
-
-    def _prefetch(self):
-        logging.debug("Starting prefetch thread")
+    def _process(self):
+        self.thread_logger.debug("Starting processing thread")
         while True:
             if not self.prefetch_batches.full() and self.length >= self.batch_size:
+                # Load a batch from disk if prefetch queue isn't full
                 loaded_batch = self._load_batch_from_disk()
                 sampled = []
-
+                self.thread_logger.debug("Loaded batch from disk")
                 for exp in loaded_batch:
                     sampled.append(
                         [torch.tensor(field, device=self.device) for field in exp]
                     )
-
                 self.prefetch_batches.put(sampled)
 
-    def _prefetch_save(self):
-        logging.debug("Starting prefetch save thread")
-        while True:
+                self.thread_logger.debug(
+                    "Batch added to prefetch queue, length: %d",
+                    self.prefetch_batches.qsize(),
+                )
             if not self.save_queue.empty():
+                # If there's data to save, process it
+                self.save_logger.debug(
+                    "Saving data to disk, queue length: %d", self.save_queue.qsize()
+                )
                 slice, data = self.save_queue.get()
                 self._save_to_disk(slice, data)
 
     def _save_batch_to_disk(self, batch):
-        logging.debug("Saving batch to disk")
+        self.save_logger.debug("Saving batch to disk")
         batch_size = len(batch)
         if self.disk_pointer + batch_size <= self.max_size:
             slice = (self.disk_pointer, self.disk_pointer + batch_size)
@@ -105,12 +105,13 @@ class ReplayBuffer:
 
         self.save_queue.put((slice, batch))
         self.length += batch_size
+        self.save_logger.debug("Batch saved to disk, new length: %d", self.length)
 
     def _save_to_disk(self, slice, data):
-        logging.debug("Saving data to disk at slice %s", slice)
+        self.save_logger.debug("Saving data to disk at slice %s", slice)
 
         with self.lock:
-            logging.debug("Acquired lock in save_to_disk")
+            self.save_logger.debug("Acquired lock in save_to_disk")
             with h5.File(self.h5_path, "a", libver="latest") as h5_file:
                 h5_file["states"][slice[0] : slice[1]] = np.array(
                     [experience[0] for experience in data]
@@ -128,17 +129,19 @@ class ReplayBuffer:
                     [experience[4] for experience in data]
                 )
 
-        logging.debug("Saved data to disk at slice %s, and lock realized", slice)
+        self.save_logger.debug(
+            "Saved data to disk at slice %s, and lock released", slice
+        )
 
     def _load_batch_from_disk(self):
-        logging.debug("Loading batch from disk")
+        self.load_logger.debug("Loading batch from disk")
         if self.length < self.batch_size:
             raise ValueError("Not enough samples in the buffer")
 
         indx = np.sort(np.random.choice(self.length, self.batch_size, replace=False))
 
         with self.lock:
-            logging.debug("Acquired lock in load_batch_from_disk")
+            self.load_logger.debug("Acquired lock in load_batch_from_disk")
             with h5.File(self.h5_path, "r") as h5_file:
                 states = np.empty(
                     (self.batch_size, *h5_file["states"].shape[1:]),
@@ -160,11 +163,15 @@ class ReplayBuffer:
                     next_states[i] = h5_file["next_states"][index]
                     dones[i] = h5_file["dones"][index]
 
-        logging.debug("Loaded batch from disk and lock released")
+        self.load_logger.debug("Loaded batch from disk and lock released")
         return list(zip(states, actions, rewards, next_states, dones))
 
     def _init_h5_file(self):
-        logging.debug("Initializing HDF5 file")
+        self.logger.debug("Initializing HDF5 file")
+        # TODO: Temporary fix. Force delete the file if it exists
+        if os.path.exists(self.h5_path):
+            os.remove(self.h5_path)
+
         # Ensure the directory exists
         if not os.path.exists(self.h5_path):
             os.makedirs(os.path.dirname(self.h5_path), exist_ok=True)
@@ -211,13 +218,6 @@ class ReplayBuffer:
                 shape=action_shape,
                 maxshape=done_shape,
                 chunks=True,
-                dtype=np.bool,
+                dtype=np.bool_,
             )
-
-    def _run_threads(self):
-        logging.debug("Running prefetch and save threads")
-        self.prefetch_thread.daemon = True
-        self.prefetch_thread.start()
-
-        self.save_thread.daemon = True
-        self.save_thread.start()
+        self.logger.debug("HDF5 file initialized")
