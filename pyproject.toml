@@ -7,6 +7,10 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+numpy = "^2.1.2"
+h5py = "^3.12.1"
+torch = "^2.4.1"
+filelock = "^3.16.1"
 
 
 [build-system]
