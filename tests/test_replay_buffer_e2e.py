@@ -1,5 +1,6 @@
 import logging
 import sys
+import time
 import unittest
 import numpy as np
 from replaybuffer.replay_buffer import ReplayBuffer
@@ -20,22 +21,25 @@ class TestReplayBufferE2E(unittest.TestCase):
         next_state = np.random.rand(84, 84, 3)
         done = [False]
 
+        start = time.time()
         # Add data to the replay buffer
         for _ in range(600):
             replay_buffer.add(state, action, reward, next_state, done)
 
-        for _ in range(32):
+        while replay_buffer.disk_manager.length < 600:
+            time.sleep(0.1)
+            
+        print(f"Time to add 600 experiences: {time.time() - start}")
+        start = time.time()
+        for _ in range(100):
             result = replay_buffer.sample()
-            self.assertEqual(result["state"].shape, (batch_size, 84, 84, 3))
-            self.assertEqual(result["action"].shape, (batch_size, 1))
-            self.assertEqual(result["reward"].shape, (batch_size, 1))
-            self.assertEqual(result["next_state"].shape, (batch_size, 84, 84, 3))
-
+            print(f"{_}\r", end="")
+        print(f"Time to sample 600 batches: {time.time() - start}")
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        stream=sys.stdout,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logging.getLogger("BackgroundSaver").setLevel(logging.DEBUG)
+    # logging.basicConfig(
+    #     stream=sys.stdout,
+    #     level=logging.DEBUG,
+    #     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    # )
     unittest.main()

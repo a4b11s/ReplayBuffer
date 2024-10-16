@@ -36,7 +36,7 @@ class BackgroundSaver:
         buffer = []
         while True:
             try:
-                experience = self.save_queue.get(timeout=10)
+                experience = self.save_queue.get(timeout=3)
 
                 if experience is None:  # Check for sentinel to stop processing
                     if buffer:

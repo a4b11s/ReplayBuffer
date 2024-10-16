@@ -1,21 +1,22 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import logging
 import numpy as np
 import h5py as h5
-
-from replaybuffer.experience import Experience
 
 
 class DiskManager:
     disk_pointer = 0
     length = 0
 
-    def __init__(self, h5_path, max_size, lock):
+    def __init__(self, h5_path, max_size, lock, num_workers=32):
         self.logger = logging.getLogger("DiskManager")
 
         self.h5_path = h5_path
         self.max_size = max_size
         self.lock = lock
+
+        self.executor = ThreadPoolExecutor(max_workers=num_workers)
 
     def _init_h5_file(self, shapes: dict):
         self.logger.debug("Initializing HDF5 file")
@@ -44,7 +45,7 @@ class DiskManager:
     def save_to_disk(self, data: dict):
         if len(data) == 0:
             return
-        
+
         if isinstance(data, list):
             data = {key: np.array([exp[key] for exp in data]) for key in data[0].keys()}
 
@@ -57,15 +58,30 @@ class DiskManager:
 
         self.disk_pointer = (self.disk_pointer + len(value)) % self.max_size
 
-        self.length += len(value)
-        if self.length > self.max_size:
-            self.length = self.max_size
+        self.length += min(self.length + len(value), self.max_size)
 
     def load_batch_from_disk(self, indices):
         with self.lock:
-            with h5.File(self.h5_path, "r") as h5_file:
-                self.logger.debug(f"Loading batch from indices {indices}")
-                return {key: h5_file[key][indices] for key in h5_file.keys()}
+            with h5.File(self.h5_path, "r", swmr=True) as h5_file:
+                self.logger.debug(f"Loading batch from indices")
+                future_to_key = {
+                    self.executor.submit(self._load_data, h5_file, key, indices): key
+                    for key in h5_file.keys()
+                }
+
+                # Збирання результатів виконання паралельних завдань
+                result = {}
+                for future in as_completed(future_to_key):
+                    key = future_to_key[future]
+                    try:
+                        result[key] = future.result()
+                    except Exception as exc:
+                        self.logger.error(f"Error loading key {key}: {exc}")
+
+                return result
+
+    def _load_data(self, h5_file, key, indices):
+        return h5_file[key][indices]
 
 
 if __name__ == "__main__":
