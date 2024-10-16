@@ -1,13 +1,17 @@
 import logging
 import threading
 
-from replaybuffer.disk_manager import DiskManager
-from replaybuffer.prefetcher import Prefetcher
-from replaybuffer.background_saver import BackgroundSaver
+import torch
+
+from .disk_manager import DiskManager
+from .prefetcher import Prefetcher
+from .background_saver import BackgroundSaver
 
 
 class ReplayBuffer:
-    def __init__(self, max_size, h5_path, image_shape, device, batch_size, save_queue_size=None):
+    def __init__(
+        self, max_size, h5_path, image_shape, device, batch_size, save_queue_size=None
+    ):
         self.logger = logging.getLogger("ReplayBuffer")
         self.max_size = max_size
         self.h5_path = h5_path
@@ -17,10 +21,12 @@ class ReplayBuffer:
 
         if save_queue_size is None:
             save_queue_size = batch_size * 2
-        
+
         self.disk_manager = DiskManager(h5_path, max_size, self.lock)
         self.prefetcher = Prefetcher(self.disk_manager, device, batch_size)
-        self.background_saver = BackgroundSaver(self.disk_manager, batch_size, queue_size=save_queue_size)
+        self.background_saver = BackgroundSaver(
+            self.disk_manager, batch_size, queue_size=save_queue_size
+        )
 
         self._init_h5_file()
         self.start_subprocesses()
@@ -40,20 +46,19 @@ class ReplayBuffer:
         self.background_saver.run()
 
     def add(self, state, action, reward, next_state, done):
-        if not isinstance(action, list):
-            action = [action]
-        if not isinstance(reward, list):
-            reward = [reward]
-        if not isinstance(done, list):
-            done = [done]
+        state = self.prepare(state)
+        action = self.prepare(action)
+        reward = self.prepare(reward)
+        next_state = self.prepare(next_state)
+        done = self.prepare(done)
 
         self.background_saver.save(
             {
                 "state": state,
-                "action": action,
-                "reward": reward,
+                "action": [action],
+                "reward": [reward],
                 "next_state": next_state,
-                "done": done,
+                "done": [done],
             }
         )
 
@@ -66,6 +71,16 @@ class ReplayBuffer:
         self.disk_manager.lock.release()
         self.lock.release()
 
+    @staticmethod
+    def prepare(data):
+        if isinstance(data, torch.Tensor):
+            return data.cpu().numpy()
+
+        return data
+
     @property
     def length(self):
         return self.disk_manager.length
+
+    def __len__(self):
+        return self.length

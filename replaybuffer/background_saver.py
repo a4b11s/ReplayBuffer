@@ -2,7 +2,7 @@ import logging
 import queue
 import threading
 
-from replaybuffer.disk_manager import DiskManager
+from .disk_manager import DiskManager
 
 
 class BackgroundSaver:

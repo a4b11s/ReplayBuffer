@@ -9,7 +9,7 @@ class DiskManager:
     disk_pointer = 0
     length = 0
 
-    def __init__(self, h5_path, max_size, lock, num_workers=32):
+    def __init__(self, h5_path, max_size, lock, num_workers=4):
         self.logger = logging.getLogger("DiskManager")
 
         self.h5_path = h5_path
@@ -50,11 +50,16 @@ class DiskManager:
             data = {key: np.array([exp[key] for exp in data]) for key in data[0].keys()}
 
         with self.lock:
-            with h5.File(self.h5_path, "a") as h5_file:
-                for key, value in data.items():
-                    h5_file[key][
-                        self.disk_pointer : self.disk_pointer + len(value)
-                    ] = value
+            try:
+                with h5.File(self.h5_path, "a") as h5_file:
+                    for key, value in data.items():
+                        h5_file[key][
+                            self.disk_pointer : self.disk_pointer + len(value)
+                        ] = value
+
+            except Exception as e:
+                self.logger.error(f"Error saving data to disk: {e}")
+                self.logger.error(f"Data: {data}")
 
         self.disk_pointer = (self.disk_pointer + len(value)) % self.max_size
 

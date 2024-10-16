@@ -3,8 +3,7 @@ import threading
 import queue
 import numpy as np
 
-from replaybuffer.disk_manager import DiskManager
-from replaybuffer.experience import Experience
+from .disk_manager import DiskManager
 
 
 class Prefetcher:
