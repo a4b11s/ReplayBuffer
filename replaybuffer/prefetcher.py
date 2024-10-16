@@ -1,7 +1,7 @@
+import logging
 import threading
 import queue
 import numpy as np
-import torch
 
 from replaybuffer.disk_manager import DiskManager
 from replaybuffer.experience import Experience
@@ -9,6 +9,7 @@ from replaybuffer.experience import Experience
 
 class Prefetcher:
     def __init__(self, disk_manager, device, batch_size):
+        self.logger = logging.getLogger("Prefetcher")
         self.disk_manager: DiskManager = disk_manager
 
         self.device = device
@@ -31,18 +32,18 @@ class Prefetcher:
         while self.running:
             if (
                 not self.prefetch_batches.full()
-                and self.disk_manager.length > self.batch_size
+                and self.disk_manager.length >= self.batch_size
             ):
+                self.logger.debug("Prefetching batch")
                 indicates = self._sample_batch_indicates()
                 loaded_batch = self.disk_manager.load_batch_from_disk(indicates)
-                sampled = [
-                    [torch.tensor(field, device=self.device) for field in exp]
-                    for exp in loaded_batch
-                ]
-                self.prefetch_batches.put(sampled)
+                self.prefetch_batches.put(loaded_batch)
+                self.logger.debug("Batch was put in queue")
 
     def get_sample(self):
         return self.prefetch_batches.get()
 
     def _sample_batch_indicates(self):
-        return np.sort(np.random.randint(0, self.disk_manager.length, self.batch_size))
+        self.logger.debug("Sampling batch indices")
+        # Sample random non-repeating indices
+        return np.sort(np.random.choice(self.disk_manager.length, self.batch_size, replace=False))

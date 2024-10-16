@@ -34,12 +34,17 @@ class DiskManager:
                     key,
                     shape=(self.max_size, *shape),
                     maxshape=(self.max_size, *shape),
+                    chunks=True,
+                    compression="gzip",
                     dtype=np.float32,
                 )
 
         self.logger.debug("HDF5 file initialized")
 
     def save_to_disk(self, data: dict):
+        if isinstance(data, list):
+            data = {key: np.array([exp[key] for exp in data]) for key in data[0].keys()}
+
         with self.lock:
             with h5.File(self.h5_path, "a") as h5_file:
                 for key, value in data.items():
@@ -56,6 +61,7 @@ class DiskManager:
     def load_batch_from_disk(self, indices):
         with self.lock:
             with h5.File(self.h5_path, "r") as h5_file:
+                self.logger.debug(f"Loading batch from indices {indices}")
                 return {key: h5_file[key][indices] for key in h5_file.keys()}
 
 
