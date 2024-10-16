@@ -7,15 +7,15 @@ from replaybuffer.experience import Experience
 
 
 class DiskManager:
+    disk_pointer = 0
+    length = 0
     def __init__(self, h5_path, max_size, lock):
         self.logger = logging.getLogger("DiskManager")
 
         self.h5_path = h5_path
         self.max_size = max_size
         self.lock = lock
-        self.disk_pointer = 0
 
-        self.length = 0
 
     def _init_h5_file(self, shapes: dict):
         self.logger.debug("Initializing HDF5 file")
