@@ -32,8 +32,8 @@ class TestReplayBuffer(unittest.TestCase):
         self.mock_disk_manager._init_h5_file.assert_called_once_with(shapes)
 
     def test_start_subprocesses(self):
-        self.mock_prefetcher.start.assert_called_once()
-        self.mock_background_saver.start.assert_called_once()
+        self.mock_prefetcher.run.assert_called_once()
+        self.mock_background_saver.run.assert_called_once()
 
     def test_add(self):
         state = [[0] * 84] * 84
