@@ -3,6 +3,8 @@ import logging
 import numpy as np
 import h5py as h5
 
+from replaybuffer.experience import Experience
+
 
 class DiskManager:
     def __init__(self, h5_path, max_size, lock):
@@ -11,9 +13,11 @@ class DiskManager:
         self.h5_path = h5_path
         self.max_size = max_size
         self.lock = lock
-        self._init_h5_file()
+        self.disk_pointer = 0
 
-    def _init_h5_file(self):
+        self.length = 0
+
+    def _init_h5_file(self, shapes: dict):
         self.logger.debug("Initializing HDF5 file")
 
         if not os.path.exists(self.h5_path):
@@ -24,59 +28,36 @@ class DiskManager:
             self.logger.critical("File exists but is not a valid HDF5 file")
             raise ValueError("File exists but is not a valid HDF5 file")
 
-    
-        # TODO: Initialize the HDF5 file with the correct datasets
-        state_shape = (self.max_size,) + self.image_shape
-        action_shape = (self.max_size,)
-        reward_shape = (self.max_size,)
-        done_shape = (self.max_size,)
-
         with h5.File(self.h5_path, "w") as h5_file:
-            h5_file.create_dataset(
-                "states",
-                shape=state_shape,
-                maxshape=state_shape,
-                chunks=True,
-                dtype=np.float32,
-            )
-            h5_file.create_dataset(
-                "next_states",
-                shape=state_shape,
-                maxshape=state_shape,
-                chunks=True,
-                dtype=np.float32,
-            )
-            h5_file.create_dataset(
-                "actions",
-                shape=action_shape,
-                maxshape=action_shape,
-                chunks=True,
-                dtype=np.int64,  # Assuming integer actions
-            )
-            h5_file.create_dataset(
-                "rewards",
-                shape=action_shape,
-                maxshape=reward_shape,
-                chunks=True,
-                dtype=np.float32,
-            )
-            h5_file.create_dataset(
-                "dones",
-                shape=action_shape,
-                maxshape=done_shape,
-                chunks=True,
-                dtype=np.bool_,
-            )
+            for key, shape in shapes.items():
+                h5_file.create_dataset(
+                    key,
+                    shape=(self.max_size, *shape),
+                    maxshape=(self.max_size, *shape),
+                    dtype=np.float32,
+                )
+
         self.logger.debug("HDF5 file initialized")
 
-    def save_to_disk(self, slice, data):
+    def save_to_disk(self, data: dict):
         with self.lock:
             with h5.File(self.h5_path, "a") as h5_file:
-                # Saving logic remains the same
-                ...
+                for key, value in data.items():
+                    h5_file[key][
+                        self.disk_pointer : self.disk_pointer + len(value)
+                    ] = value
+
+        self.disk_pointer = (self.disk_pointer + len(value)) % self.max_size
+
+        self.length += len(value)
+        if self.length > self.max_size:
+            self.length = self.max_size
 
     def load_batch_from_disk(self, indices):
         with self.lock:
             with h5.File(self.h5_path, "r") as h5_file:
-                # Loading logic remains the same
-                ...
+                return {key: h5_file[key][indices] for key in h5_file.keys()}
+
+
+if __name__ == "__main__":
+    DiskManager("", 100, None)
