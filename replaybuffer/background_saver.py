@@ -36,7 +36,7 @@ class BackgroundSaver:
         buffer = []
         while True:
             try:
-                experience = self.save_queue.get(timeout=1)
+                experience = self.save_queue.get(timeout=10)
 
                 if experience is None:  # Check for sentinel to stop processing
                     if buffer:
@@ -46,14 +46,20 @@ class BackgroundSaver:
 
                 buffer.append(experience)
 
-                if len(buffer) >= self.batch_size:
+                if len(buffer) >= self.save_queue.maxsize / 2:
                     self.logger.debug(
                         f"Saving batch of {len(buffer)} experiences to disk"
                     )
-                    self.disk_manager.save_to_disk(buffer)
-                    buffer.clear()
+                    if len(buffer):
+                        self.disk_manager.save_to_disk(buffer)
+                        buffer.clear()
 
             except queue.Empty:
+                self.logger.debug(
+                    f"Timeout, Saving batch of {len(buffer)} experiences to disk"
+                )
+                self.disk_manager.save_to_disk(buffer)
+                buffer.clear()
                 continue  # Timeout reached, continue processing
 
             except Exception as e:

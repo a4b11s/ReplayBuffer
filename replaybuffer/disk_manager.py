@@ -42,6 +42,9 @@ class DiskManager:
         self.logger.debug("HDF5 file initialized")
 
     def save_to_disk(self, data: dict):
+        if len(data) == 0:
+            return
+        
         if isinstance(data, list):
             data = {key: np.array([exp[key] for exp in data]) for key in data[0].keys()}
 
