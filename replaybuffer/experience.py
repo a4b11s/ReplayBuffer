@@ -1,4 +1,6 @@
 class Experience:
+    _fields = ["state", "action", "reward", "next_state", "done"]
+
     def __init__(self, state, action, reward, next_state, done):
         self.state = state
         self.action = action
