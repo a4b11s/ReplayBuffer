@@ -33,8 +33,8 @@ class ReplayBuffer:
         self.disk_manager._init_h5_file(shapes)
 
     def start_subprocesses(self):
-        self.prefetcher.start()
-        self.background_saver.start()
+        self.prefetcher.run()
+        self.background_saver.run()
 
     def add(self, state, action, reward, next_state, done):
         self.background_saver.save(

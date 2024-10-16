@@ -9,6 +9,7 @@ from replaybuffer.disk_manager import DiskManager
 class TestPrefetcher(unittest.TestCase):
     def setUp(self):
         self.disk_manager = MagicMock(spec=DiskManager)
+        self.disk_manager.length = 10
         self.device = torch.device("cpu")
         self.batch_size = 4
         self.prefetcher = Prefetcher(self.disk_manager, self.device, self.batch_size)

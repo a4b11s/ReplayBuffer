@@ -18,11 +18,11 @@ class Prefetcher:
         self.thread = threading.Thread(target=self._process)
         self.thread.daemon = True
         self.running = False
-        
+
     def run(self):
         self.running = True
         self.thread.start()
-        
+
     def stop(self):
         self.running = False
         self.thread.join()
@@ -45,4 +45,4 @@ class Prefetcher:
         return self.prefetch_batches.get()
 
     def _sample_batch_indicates(self):
-        return np.random.randint(0, self.disk_manager.length, self.batch_size)
+        return np.sort(np.random.randint(0, self.disk_manager.length, self.batch_size))
